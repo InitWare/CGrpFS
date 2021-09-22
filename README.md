@@ -37,7 +37,7 @@ to facilitate delegation.
 
 To ensure consistency of file contents over the course of multiple reads, each
 `open` operation allocates a buffer into which the contents of the associated
-file is generated in full. 
+file is generated in full.
 
 A mini-ProcFS is also provided with only a minimal `cgroup` file present in each
 PID's directory. The nodes for directories (and the contained `cgroup` file)
@@ -72,7 +72,7 @@ without backing nodes to save some memory use.
 
 Much more data than necessary is stored in each node (a full struct `stat`);
 this can be reduced. And proper nodes for each pseudo-file in a CGroup directory
-could be abolished too, with e.g. 
+could be abolished too.
 
 Much unnecessary copying goes on due to CGrpFS using the high-level libfuse
 interface. Lowering to the fuse_lowlevel interface (or even directly to the
