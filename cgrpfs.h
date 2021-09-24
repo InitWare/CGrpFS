@@ -4,6 +4,18 @@
 #include <sys/queue.h>
 #include <sys/stat.h>
 
+#ifdef CGRPFS_THREADED
+#include <pthread.h>
+
+#define CGMGR_LOCKED                                                           \
+	__attribute__((cleanup(_unlock_cgmgr_))) __attribute__((               \
+		unused)) int _unused_lock_ = pthread_mutex_lock(&cgmgr.lock)
+
+void _unlock_cgmgr_(int *unused);
+#else
+#define CGMGR_LOCKED
+#endif
+
 #include "uthash.h"
 
 /* an entry in the pid => node hashtable */
@@ -55,6 +67,17 @@ typedef struct cgmgr {
 	pid_hash_entry_t *pidcg; /* map pid => node */
 
 	cg_node_t *rootnode, *metanode;
+
+#ifdef CGRPFS_THREADED
+	pthread_mutex_t lock;
+	/*
+	 * TODO: If it turns out adding events to kqueue from another thread is
+	 * not allowed, we'll write a byte to the pipe which the kevent thread
+	 * will set a read filter on, so that it's not blocked on kevent() at
+	 * the time of adding a new event filter from our other thread.
+	 */
+	int commfd[2];
+#endif
 } cgmgr_t;
 
 /* an open file description */

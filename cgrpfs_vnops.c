@@ -7,13 +7,13 @@
 
 #define FUSE_USE_VERSION 26
 #include <fuse.h>
-#include <fuse_lowlevel.h>
 
 #include "cgrpfs.h"
 
 static int
 cg_chmod(const char *path, mode_t mode)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = lookupnode(path, false);
 
 	if (!node)
@@ -28,6 +28,7 @@ cg_chmod(const char *path, mode_t mode)
 static int
 cg_chown(const char *path, uid_t uid, gid_t gid)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = lookupnode(path, false);
 
 	if (!node)
@@ -44,6 +45,7 @@ cg_chown(const char *path, uid_t uid, gid_t gid)
 static int
 cg_getattr(const char *path, struct stat *st)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = lookupnode(path, false);
 
 	if (!node)
@@ -57,6 +59,7 @@ cg_getattr(const char *path, struct stat *st)
 static int
 cg_open(const char *path, struct fuse_file_info *fi)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = lookupnode(path, false);
 	cg_filedesc_t *filedesc;
 
@@ -116,6 +119,7 @@ static int
 cg_read(const char *path, char *buf, size_t len, off_t off,
 	struct fuse_file_info *fi)
 {
+	CGMGR_LOCKED;
 	cg_filedesc_t *filedesc = (void *)fi->fh;
 	size_t maxlen;
 
@@ -141,6 +145,7 @@ static int
 cg_write(const char *path, const char *buf, size_t len, off_t off,
 	struct fuse_file_info *fi)
 {
+	CGMGR_LOCKED;
 	cg_filedesc_t *filedesc = (void *)fi->fh;
 	cg_node_t *node = filedesc->node;
 
@@ -165,6 +170,7 @@ cg_write(const char *path, const char *buf, size_t len, off_t off,
 static int
 cg_release(const char *path, struct fuse_file_info *fi)
 {
+	CGMGR_LOCKED;
 	cg_filedesc_t *filedesc = (void *)fi->fh;
 
 	assert(filedesc);
@@ -177,6 +183,7 @@ cg_release(const char *path, struct fuse_file_info *fi)
 static int
 cg_opendir(const char *path, struct fuse_file_info *fi)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = lookupnode(path, false);
 
 	if (!node)
@@ -194,6 +201,7 @@ static int
 cg_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off,
 	struct fuse_file_info *fi)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = (cg_node_t *)fi->fh;
 	cg_node_t *dirent;
 
@@ -210,6 +218,7 @@ cg_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t off,
 int
 cg_mkdir(const char *path, mode_t mode)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = lookupnode(path, false);
 	cg_node_t *newdir;
 	struct fuse_context *ctx = fuse_get_context();
@@ -237,6 +246,7 @@ cg_mkdir(const char *path, mode_t mode)
 static int
 cg_rmdir(const char *path)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = lookupnode(path, false);
 
 	if (!node)
@@ -252,6 +262,7 @@ cg_rmdir(const char *path)
 static int
 cg_rename(const char *oldpath, const char *newpath)
 {
+	CGMGR_LOCKED;
 	cg_node_t *old = lookupnode(oldpath, false);
 	cg_node_t *newparent = lookupnode(newpath, true);
 	char *dirname = strrchr(newpath, '/');
