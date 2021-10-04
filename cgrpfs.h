@@ -53,7 +53,8 @@ typedef struct cg_node {
 	cg_nodetype_t type;
 	struct cg_node *parent;
 	struct stat attr;
-	bool accessed; /* has PUFFS been given this at any time? */
+	bool todel; /* is it to be deleted? */
+	int accessed; /* how many kernel handles to it? */
 
 	/* for PID dirs */
 	pid_t pid;
@@ -106,7 +107,10 @@ cg_node_t *newcgdir(cg_node_t *parent, const char *name, mode_t perms,
 	uid_t uid, gid_t gid);
 /* Like delnode but dosen't free it. PUFFS will order a reclaim op later. */
 void removenode(cg_node_t *node);
-/* Recursively delete node and subnodes. Any contained PIDs moved to parent */
+/*
+ * Delete a node. Any contained PIDs moved to parent. Subnodes either deleted
+ * (if accessed = 0) or marked for deletion.
+ */
 void delnode(cg_node_t *node);
 
 /* Lookup a node by filename within another node. */

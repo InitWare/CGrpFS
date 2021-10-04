@@ -8,6 +8,12 @@
 #include <errno.h>
 #include <stdio.h>
 
+static void
+setaccessed(cg_node_t *node)
+{
+	node->accessed++;
+}
+
 static int
 nodevtype(cg_node_t *node)
 {
@@ -22,6 +28,7 @@ nodevtype(cg_node_t *node)
 	case CGN_PID_ROOT_DIR: /* cgroup.meta root dir */
 	case CGN_PID_DIR: /* cgroup.meta/$pid directory */
 		return VDIR;
+
 	default:
 		return VBAD;
 	}
@@ -39,6 +46,7 @@ cgrpfs_node_lookup(struct puffs_usermount *pu, void *opc,
 			return -ENOENT;
 
 		puffs_newinfo_setcookie(pni, node->parent);
+		setaccessed(node->parent);
 		puffs_newinfo_setvtype(pni, VDIR);
 
 		return 0;
@@ -47,6 +55,7 @@ cgrpfs_node_lookup(struct puffs_usermount *pu, void *opc,
 	file = lookupfile(node, pcn->pcn_name);
 	if (file) {
 		puffs_newinfo_setcookie(pni, file);
+		setaccessed(file);
 		puffs_newinfo_setvtype(pni, nodevtype(file));
 		puffs_newinfo_setsize(pni, 0);
 		puffs_newinfo_setrdev(pni, 0);
@@ -60,7 +69,6 @@ cgrpfs_node_lookup(struct puffs_usermount *pu, void *opc,
 		int r = puffs_access(VDIR, node->attr.st_mode,
 			node->attr.st_uid, node->attr.st_gid, PUFFS_VWRITE,
 			pcn->pcn_cred);
-		printf("R: %d\n", r);
 		if (r)
 			return r;
 	}
@@ -82,8 +90,6 @@ cgrpfs_node_mkdir(struct puffs_usermount *pu, void *opc,
 	if (node_parent->type != CGN_CG_DIR)
 		return EOPNOTSUPP;
 
-	printf("NODE PARENT: %s. NEW NAME: %s\n", node_parent->name,
-		pcn->pcn_name);
 	if (lookupfile(node_parent, pcn->pcn_name) != NULL)
 		return EEXIST;
 
@@ -95,6 +101,7 @@ cgrpfs_node_mkdir(struct puffs_usermount *pu, void *opc,
 	node_new = newcgdir(node_parent, pcn->pcn_name, va->va_mode & 07777,
 		uid, gid);
 
+	setaccessed(node_new);
 	puffs_newinfo_setcookie(pni, node_new);
 
 	return 0;
@@ -181,9 +188,13 @@ cgrpfs_node_setattr(struct puffs_usermount *pu, void *opc,
 		if (rv)
 			return rv;
 		if (va->va_atime.tv_sec != PUFFS_VNOVAL)
-			node->attr.st_atim.tv_sec - va->va_atime.tv_sec;
+			node->attr.st_atim.tv_sec = va->va_atime.tv_sec;
 		if (va->va_atime.tv_nsec != PUFFS_VNOVAL)
-			node->attr.st_atim.tv_nsec - va->va_atime.tv_nsec;
+			node->attr.st_atim.tv_nsec = va->va_atime.tv_nsec;
+		if (va->va_mtime.tv_sec != PUFFS_VNOVAL)
+			node->attr.st_mtim.tv_sec = va->va_mtime.tv_sec;
+		if (va->va_mtime.tv_nsec != PUFFS_VNOVAL)
+			node->attr.st_mtim.tv_nsec = va->va_mtime.tv_nsec;
 	}
 
 	if (va->va_size != PUFFS_VNOVAL)
@@ -261,7 +272,7 @@ cgrpfs_node_rename(struct puffs_usermount *pu, void *opc, void *src,
 
 	if (cgn_sdir != cgn_tdir)
 		return EPERM; /* only rename within same dir */
-	else if (!cgn_sfile->type == CGN_CG_DIR)
+	else if (cgn_sfile->type != CGN_CG_DIR)
 		return EOPNOTSUPP; /* only cgdirs may be renamed */
 
 	// TODO: double check source still exists?
@@ -278,8 +289,10 @@ cgrpfs_node_read(struct puffs_usermount *pu, void *opc, uint8_t *buf,
 {
 	CGMGR_LOCKED;
 	cg_node_t *node = opc;
-	char *txt = nodetxt(node);
+	char *txt;
 	size_t maxlen;
+
+	txt = nodetxt(node);
 
 	if (!txt)
 		return ENOMEM;
@@ -334,9 +347,13 @@ cgrpfs_node_inactive(struct puffs_usermount *pu, void *opc)
 int
 cgrpfs_node_reclaim(struct puffs_usermount *pu, void *opc)
 {
+	CGMGR_LOCKED;
 	cg_node_t *node = opc;
 
-	delnode(node);
+	if (node->todel)
+		delnode(node);
+	else
+		node->accessed = 0;
 
 	return 0;
 }

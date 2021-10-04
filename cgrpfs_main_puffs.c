@@ -17,6 +17,7 @@
 #include "cgrpfs.h"
 
 cgmgr_t cgmgr;
+static struct puffs_usermount *pu;
 
 static void
 usage()
@@ -30,14 +31,13 @@ main(int argc, char *argv[])
 {
 	extern char *optarg;
 	extern int optind;
-	struct puffs_usermount *pu;
 	struct puffs_pathobj *po_root;
 	struct puffs_ops *pops;
 	struct timespec ts;
 	const char *typename;
 	char *rtstr;
 	mntoptparse_t mp;
-	int pflags = 0 | PUFFS_FLAG_OPDUMP, detach = 0, mntflags = 0;
+	int pflags = 0, detach = 0, mntflags = 0;
 	int ch;
 
 	while ((ch = getopt(argc, argv, "o:")) != -1) {
@@ -58,6 +58,8 @@ main(int argc, char *argv[])
 
 	if (argc != 1)
 		usage();
+
+	puffs_unmountonsignal(SIGINT, 1);
 
 	cgmgr_init();
 

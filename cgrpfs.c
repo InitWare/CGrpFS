@@ -124,6 +124,8 @@ newnode(cg_node_t *parent, const char *name, cg_nodetype_t type)
 	node->notify = false;
 	node->parent = parent;
 	node->pid = 0;
+	node->accessed = false;
+	node->todel = false;
 	LIST_INIT(&node->subnodes);
 
 	bzero(&node->attr, sizeof(node->attr));
@@ -156,12 +158,26 @@ removenode(cg_node_t *node)
 {
 	cg_node_t *val, *tmp;
 
+	if (!node->accessed)
+		return delnode(node);
+	if (node->todel)
+		return;
+
+	// printf("Marking node %p for deletion\n", node);
+	node->todel = true;
+
+	LIST_FOREACH_SAFE (val, &node->subnodes, entries, tmp)
+		if (!val->accessed)
+			delnode(val);
+		else
+			/* if accessed, wait for PUFFS to issue a reclaim op */
+			removenode(val);
+
 	/* move up all contained PIDs to parent */
 	movepids(node, node->parent);
 
 	if (node->parent)
 		LIST_REMOVE(node, entries);
-	node->parent = NULL;
 }
 
 void
@@ -169,8 +185,14 @@ delnode(cg_node_t *node)
 {
 	cg_node_t *val, *tmp;
 
+	// printf("Deleting node %p\n", node);
+
 	LIST_FOREACH_SAFE (val, &node->subnodes, entries, tmp)
-		delnode(val);
+		if (!val->accessed)
+			delnode(val);
+		else
+			/* if accessed, wait for PUFFS to issue a reclaim op */
+			removenode(val);
 
 	/* move up all contained PIDs to parent */
 	movepids(node, node->parent);
