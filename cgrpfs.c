@@ -23,6 +23,64 @@ struct cgdir_nodes {
 	const char *name;
 };
 
+#ifdef CGRPFS_THREADED
+void
+_unlock_cgmgr_(int *unused)
+{
+	(void)unused;
+	pthread_mutex_unlock(&cgmgr.lock);
+}
+
+static void *
+kqueue_thread(void *unused)
+{
+	struct kevent kev;
+
+	(void)unused;
+
+	while (true) {
+		int r;
+
+		r = kevent(cgmgr.kq, NULL, 0, &kev, 1, NULL);
+
+		pthread_mutex_lock(&cgmgr.lock);
+
+		if (r < 0 && errno != EINTR)
+			err(EXIT_FAILURE, "kevent failed");
+		else if (r < 0)
+			;
+		else if (r == 0)
+			warn("Got 0 from kevent");
+		else if (kev.filter == EVFILT_PROC) {
+			if (kev.fflags & NOTE_CHILD) {
+				pid_hash_entry_t *entry;
+				uintptr_t ppidp = kev.data; /* parent pid */
+
+				/* find parent pid's node */
+				HASH_FIND_PTR(cgmgr.pidcg, &ppidp, entry);
+
+				if (!entry)
+					warn("Couldn't find containing CGroup of PID %lld",
+						(long long)kev.data);
+				else
+					attachpid(entry->node, kev.ident);
+			} else if (kev.fflags & NOTE_EXIT)
+				detachpid(kev.ident, false);
+			else if (kev.fflags & NOTE_TRACKERR)
+				warn("NOTE_TRACKERR received from Kernel Queue");
+			else if (kev.fflags & NOTE_EXEC)
+				warn("NOTE_EXEC was received");
+		} else
+			assert(!"Unreached");
+
+		pthread_mutex_unlock(&cgmgr.lock);
+	}
+
+	exit(EXIT_FAILURE);
+	return NULL;
+}
+#endif /* CGROUPFS_THREADS */
+
 /* add PID to cgmgr hashtable */
 static int
 addpidhash(pid_t pid, cg_node_t *node, pid_hash_entry_t **entryout)
@@ -79,23 +137,43 @@ newnode(cg_node_t *parent, const char *name, cg_nodetype_t type)
 	return node;
 }
 
+static void
+movepids(cg_node_t *from, cg_node_t *to)
+{
+	pid_hash_entry_t *entry, *tmp2;
+
+	HASH_ITER(hh, cgmgr.pidcg, entry, tmp2)
+	if (entry->node == from) {
+		if (to)
+			entry->node = to;
+		else
+			detachpid(entry->pid, true);
+	}
+}
+
+void
+removenode(cg_node_t *node)
+{
+	cg_node_t *val, *tmp;
+
+	/* move up all contained PIDs to parent */
+	movepids(node, node->parent);
+
+	if (node->parent)
+		LIST_REMOVE(node, entries);
+	node->parent = NULL;
+}
+
 void
 delnode(cg_node_t *node)
 {
 	cg_node_t *val, *tmp;
-	pid_hash_entry_t *entry, *tmp2;
 
 	LIST_FOREACH_SAFE (val, &node->subnodes, entries, tmp)
 		delnode(val);
 
 	/* move up all contained PIDs to parent */
-	HASH_ITER(hh, cgmgr.pidcg, entry, tmp2)
-	if (entry->node == node) {
-		if (node->parent)
-			entry->node = node->parent;
-		else
-			detachpid(entry->pid, true);
-	}
+	movepids(node, node->parent);
 
 	if (node->parent)
 		LIST_REMOVE(node, entries);
@@ -115,8 +193,8 @@ addcgdirfiles(cg_node_t *node)
 		{ CGN_INVALID, NULL } };
 
 	for (int i = 0; nodes[i].type != CGN_INVALID; i++) {
-		cg_node_t *subnode =
-			newnode(node, nodes[i].name, nodes[i].type);
+		cg_node_t *subnode = newnode(node, nodes[i].name,
+			nodes[i].type);
 
 		if (!subnode)
 			return -ENOMEM;
@@ -175,8 +253,8 @@ synthpiddir(pid_t pid)
 	node->pid = pid;
 	node->attr.st_mode = S_IFDIR | 0755;
 	for (int i = 0; nodes[i].type != CGN_INVALID; i++) {
-		cg_node_t *subnode =
-			newnode(node, nodes[i].name, nodes[i].type);
+		cg_node_t *subnode = newnode(node, nodes[i].name,
+			nodes[i].type);
 
 		if (!subnode) {
 			delnode(node);
@@ -196,6 +274,20 @@ lookupfile(cg_node_t *node, const char *filename)
 	LIST_FOREACH (subnode, &node->subnodes, entries)
 		if (!strcmp(subnode->name, filename))
 			return subnode;
+
+	/* try to synth a PID dir */
+	if (node->type == CGN_PID_ROOT_DIR) {
+		char *endptr;
+		pid_t pid;
+		cg_node_t *pidnode;
+
+		pid = strtol(filename, &endptr, 10);
+
+		if (*endptr != '\0' && *endptr != '/')
+			return NULL;
+
+		return synthpiddir(pid);
+	}
 
 	return NULL;
 }
@@ -330,6 +422,37 @@ procsfiletxt(cg_node_t *node)
 	return txt ? txt : strdup("");
 }
 
+char *
+nodetxt(cg_node_t *node)
+{
+	if (node->type == CGN_PID_CGROUP) {
+		pid_hash_entry_t *entry;
+		uintptr_t pidp = node->parent->pid;
+		char *buf;
+
+		HASH_FIND_PTR(cgmgr.pidcg, &pidp, entry);
+
+		if (!entry)
+			/* untracked are in root CGroup by default */
+			asprintf(&buf, "1:name=systemd:/\n");
+		else {
+			char *path = nodefullpath(entry->node);
+
+			if (!path)
+				return NULL;
+
+			asprintf(&buf, "1:name=systemd:%s\n", path);
+			free(path);
+		}
+
+		return buf;
+
+	} else if (node->type == CGN_PROCS)
+		return procsfiletxt(node);
+	else
+		return NULL;
+}
+
 int
 attachpid(cg_node_t *node, pid_t pid)
 {
@@ -396,9 +519,23 @@ detachpid(pid_t pid, bool untrack)
 void
 cgmgr_init(void)
 {
+#ifdef CGRPFS_THREADED
+	int r;
+	pthread_t thrd;
+#endif
+
 	cgmgr.kq = kqueue();
 	if ((cgmgr.kq = kqueue()) < 0)
 		errx(EXIT_FAILURE, "Failed to open kernel queue.");
+
+#ifdef CGRPFS_THREADED
+	if (pthread_mutex_init(&cgmgr.lock, NULL) < 0)
+		err(EXIT_FAILURE, "Failed to initialise mutex");
+
+	r = pthread_create(&thrd, NULL, kqueue_thread, NULL);
+	if (r != 0)
+		errx(EXIT_FAILURE, "pthread_create failed: %s", strerror(r));
+#endif
 
 	cgmgr.pidcg = NULL;
 

@@ -53,6 +53,7 @@ typedef struct cg_node {
 	cg_nodetype_t type;
 	struct cg_node *parent;
 	struct stat attr;
+	bool accessed; /* has PUFFS been given this at any time? */
 
 	/* for PID dirs */
 	pid_t pid;
@@ -103,6 +104,8 @@ cg_node_t *newnode(cg_node_t *parent, const char *name, cg_nodetype_t type);
 /* Create a new CGroup directory node */
 cg_node_t *newcgdir(cg_node_t *parent, const char *name, mode_t perms,
 	uid_t uid, gid_t gid);
+/* Like delnode but dosen't free it. PUFFS will order a reclaim op later. */
+void removenode(cg_node_t *node);
 /* Recursively delete node and subnodes. Any contained PIDs moved to parent */
 void delnode(cg_node_t *node);
 
@@ -113,6 +116,8 @@ cg_node_t *lookupnode(const char *path, bool secondlast);
 /* Get full path of node */
 char *nodefullpath(cg_node_t *node);
 
+/* Get file contents of node. */
+char *nodetxt(cg_node_t *node);
 /* Get cgroups.proc file contents for node */
 char *procsfiletxt(cg_node_t *node);
 

@@ -75,42 +75,14 @@ cg_open(const char *path, struct fuse_file_info *fi)
 	fi->fh = (uintptr_t)filedesc;
 	fi->direct_io = 1;
 
-	if (node->type == CGN_PROCS) {
-		if ((filedesc->buf = procsfiletxt(node)) == NULL) {
-			free(filedesc->buf);
-			return -ENOMEM;
-		}
-	} else if (node->type == CGN_PID_CGROUP) {
-		pid_hash_entry_t *entry;
-		uintptr_t pidp = node->parent->pid;
+	if (node->type == CGN_PROCS && node->type != CGN_PID_CGROUP)
+		return -ENOTSUP;
 
-		HASH_FIND_PTR(cgmgr.pidcg, &pidp, entry);
-
-		if (!entry) {
-			/* untracked are in root CGroup by default */
-			asprintf(&filedesc->buf, "1:name=systemd:/\n");
-			if (!filedesc->buf) {
-				free(filedesc);
-				return -ENOMEM;
+	filedesc->buf = nodetxt(node);
+	if (!filedesc->buf) {
+		free(filedesc);
+		return -ENOMEM;
 			}
-		} else {
-			char *path = nodefullpath(entry->node);
-
-			if (!path) {
-				free(filedesc);
-				return -ENOMEM;
-			}
-
-			asprintf(&filedesc->buf, "1:name=systemd:%s\n", path);
-			if (!filedesc->buf) {
-				free(path);
-				free(filedesc);
-				return -ENOMEM;
-			}
-
-			free(path);
-		}
-	}
 
 	return 0;
 }

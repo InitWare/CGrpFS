@@ -4,7 +4,11 @@
 #include <puffs.h>
 /* these must come first */
 
+#include <sys/event.h>
+
+#include <assert.h>
 #include <err.h>
+#include <errno.h>
 #include <getopt.h>
 #include <mntopts.h>
 #include <paths.h>
@@ -33,7 +37,7 @@ main(int argc, char *argv[])
 	const char *typename;
 	char *rtstr;
 	mntoptparse_t mp;
-	int pflags = 0, detach = 0, mntflags = 0;
+	int pflags = 0 | PUFFS_FLAG_OPDUMP, detach = 0, mntflags = 0;
 	int ch;
 
 	while ((ch = getopt(argc, argv, "o:")) != -1) {
@@ -64,25 +68,41 @@ main(int argc, char *argv[])
 	PUFFSOP_SETFSNOP(pops, statvfs);
 
 	PUFFSOP_SET(pops, cgrpfs, node, lookup);
+	PUFFSOP_SET(pops, cgrpfs, node, open);
+	PUFFSOP_SET(pops, cgrpfs, node, open2);
+	PUFFSOP_SET(pops, cgrpfs, node, mkdir);
+	PUFFSOP_SET(pops, cgrpfs, node, rmdir);
 	PUFFSOP_SET(pops, cgrpfs, node, access);
 	PUFFSOP_SET(pops, cgrpfs, node, getattr);
+	PUFFSOP_SET(pops, cgrpfs, node, setattr);
+	PUFFSOP_SET(pops, cgrpfs, node, readdir);
+	PUFFSOP_SET(pops, cgrpfs, node, rename);
+	PUFFSOP_SET(pops, cgrpfs, node, read);
+	PUFFSOP_SET(pops, cgrpfs, node, write);
+	PUFFSOP_SET(pops, cgrpfs, node, inactive);
+	PUFFSOP_SET(pops, cgrpfs, node, reclaim);
 
 	if ((pu = puffs_init(pops, _PATH_PUFFS, "cgrpfs", NULL, pflags)) ==
 		NULL)
 		err(1, "init");
 
-	/*
-	puffs_setfhsize(pu, sizeof(struct dtfs_fid),
-		PUFFS_FHFLAG_NFSV2 | PUFFS_FHFLAG_NFSV3 |
-			(dynamicfh ? PUFFS_FHFLAG_DYNAMIC : 0));
-*/
+		/*
+	 * The framebuf interface is useless to us as it tries to add a write
+	 * event filter, which doesn't work on kernel queues.
+	 * We could maybe have a separate thread wait for the KQ FD to become
+	 * ready then sent a byte along a pipe instead, but that can be done
+	 * another time.
+	 */
+#if 0
+	puffs_framev_init(pu, kq_fdread_fn, NULL, NULL, NULL, NULL);
+	if (puffs_framev_addfd(pu, cgmgr.kq, PUFFS_FBIO_READ) < 0)
+		err(1, "framebuf addfd kq");
+#endif
 
 	puffs_set_errnotify(pu, puffs_kernerr_abort);
 	if (detach)
 		if (puffs_daemon(pu, 1, 1) == -1)
 			err(1, "puffs_daemon");
-
-	printf("MNTFLAGS: %d: %s\n", mntflags, *argv);
 
 	if (puffs_mount(pu, *argv, mntflags, cgmgr.rootnode) == -1)
 		err(1, "mount");
