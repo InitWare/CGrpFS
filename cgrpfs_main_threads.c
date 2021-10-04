@@ -18,6 +18,8 @@ cgmgr_t cgmgr;
 int
 main(int argc, char *argv[])
 {
+	int r;
+
 	cgmgr_init();
 
 	cgmgr.fuse = fuse_setup(argc, argv, &cgops, sizeof(cgops),

@@ -2,12 +2,13 @@ CGrpFS
 ======
 
 CGrpFS is a tiny implementation of the GNU/Linux CGroup filesystem for BSD
-platforms. It takes the form of a FUSE filesystem and implements robust tracking
-of processes. Resource control, however, is not present; the different BSD
-platforms each provide different mechanisms for this, none of which are easily
-adapted to CGroups semantics. The process tracking alone is sufficient for the
-main user of CGrpFS, [InitWare](https://github.com/InitWare/InitWare), a service
-manager derived from systemd.
+platforms. It takes the form of a either a PUFFS or FUSE filesystem, and
+implements robust tracking of processes. Resource control, however, is not
+present; the different BSD platforms each provide different mechanisms for this,
+none of which are trivially adapted to CGroups semantics. The process tracking
+alone is sufficient for the main user of CGrpFS,
+[InitWare](https://github.com/InitWare/InitWare), a service manager derived from
+systemd.
 
 CGrpFS is available under the Modified BSD Licence. It is not as-yet very well
 tested, but seems to work fine for InitWare's purposes.
@@ -82,10 +83,6 @@ interface because it's based on path strings; the archictecture of CGrpFS more
 readily fits the lower-level inode-based interface. Path lookup would also
 become simpler since there would be one lookup request for each component of
 the path.
-
-If a move to the lower-level FUSE interface were to occur, it would also be
-easier to add NetBSD PUFFS implementation which could share the codebase with
-the FUSE implementation.
 
 OOM resilience could be improved in line with the notes in the Architecture
 section above.

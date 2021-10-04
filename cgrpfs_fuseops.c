@@ -75,7 +75,7 @@ cg_open(const char *path, struct fuse_file_info *fi)
 	fi->fh = (uintptr_t)filedesc;
 	fi->direct_io = 1;
 
-	if (node->type == CGN_PROCS && node->type != CGN_PID_CGROUP)
+	if (node->type != CGN_PROCS && node->type != CGN_PID_CGROUP)
 		return -ENOTSUP;
 
 	filedesc->buf = nodetxt(node);
