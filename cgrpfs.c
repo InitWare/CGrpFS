@@ -1,4 +1,10 @@
+#define _KERNTYPES
 #include <sys/types.h>
+
+#ifdef CGRPFS_PUFFS
+#include <puffs.h>
+#endif
+
 #include <sys/event.h>
 
 #include <assert.h>
@@ -181,6 +187,17 @@ synthpiddir(pid_t pid)
 	}
 
 	return node;
+}
+
+cg_node_t *
+lookupfile(cg_node_t *node, const char *filename)
+{
+	cg_node_t *subnode;
+	LIST_FOREACH (subnode, &node->subnodes, entries)
+		if (!strcmp(subnode->name, filename))
+			return subnode;
+
+	return NULL;
 }
 
 cg_node_t *
@@ -374,4 +391,25 @@ detachpid(pid_t pid, bool untrack)
 	}
 
 	return 0;
+}
+
+void
+cgmgr_init(void)
+{
+	cgmgr.kq = kqueue();
+	if ((cgmgr.kq = kqueue()) < 0)
+		errx(EXIT_FAILURE, "Failed to open kernel queue.");
+
+	cgmgr.pidcg = NULL;
+
+	cgmgr.rootnode = newcgdir(NULL, NULL, 0755, 0, 0);
+	if (!cgmgr.rootnode)
+		errx(EXIT_FAILURE, "Failed to allocate root node.");
+
+	cgmgr.metanode = newnode(cgmgr.rootnode, "cgroup.meta",
+		CGN_PID_ROOT_DIR);
+	if (!cgmgr.metanode)
+		errx(EXIT_FAILURE, "Failed to allocate meta node.");
+
+	cgmgr.metanode->attr.st_mode = S_IFDIR | 0755;
 }

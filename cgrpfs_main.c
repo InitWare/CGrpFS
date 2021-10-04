@@ -104,22 +104,7 @@ loop()
 int
 main(int argc, char *argv[])
 {
-	cgmgr.kq = kqueue();
-	if ((cgmgr.kq = kqueue()) < 0)
-		errx(EXIT_FAILURE, "Failed to open kernel queue.");
-
-	cgmgr.pidcg = NULL;
-
-	cgmgr.rootnode = newcgdir(NULL, NULL, 0755, 0, 0);
-	if (!cgmgr.rootnode)
-		errx(EXIT_FAILURE, "Failed to allocate root node.");
-
-	cgmgr.metanode =
-		newnode(cgmgr.rootnode, "cgroup.meta", CGN_PID_ROOT_DIR);
-	if (!cgmgr.metanode)
-		errx(EXIT_FAILURE, "Failed to allocate meta node.");
-
-	cgmgr.metanode->attr.st_mode = S_IFDIR | 0755;
+	cgmgr_init();
 
 	cgmgr.fuse = fuse_setup(argc, argv, &cgops, sizeof(cgops),
 		&cgmgr.mountpoint, &cgmgr.mt, &cgmgr);

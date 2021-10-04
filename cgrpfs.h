@@ -1,6 +1,14 @@
 #ifndef CGRPFS_H_
 #define CGRPFS_H_
 
+#ifdef CGRPFS_PUFFS
+#define _KERNTYPES
+
+#include <sys/types.h>
+
+#include <puffs.h>
+#endif
+
 #include <sys/queue.h>
 #include <sys/stat.h>
 
@@ -87,6 +95,9 @@ typedef struct cgn_filedesc {
 	char *buf; /* file contents - pre-filled on open() for consistency */
 } cg_filedesc_t;
 
+/* set up the cgmgr */
+void cgmgr_init(void);
+
 /* Create a new node and initialise it enough to let delnode not fail */
 cg_node_t *newnode(cg_node_t *parent, const char *name, cg_nodetype_t type);
 /* Create a new CGroup directory node */
@@ -95,6 +106,8 @@ cg_node_t *newcgdir(cg_node_t *parent, const char *name, mode_t perms,
 /* Recursively delete node and subnodes. Any contained PIDs moved to parent */
 void delnode(cg_node_t *node);
 
+/* Lookup a node by filename within another node. */
+cg_node_t *lookupfile(cg_node_t *node, const char *filename);
 /* Lookup a node by path, or the second-last node of that path */
 cg_node_t *lookupnode(const char *path, bool secondlast);
 /* Get full path of node */
@@ -109,6 +122,11 @@ int attachpid(cg_node_t *node, pid_t pid);
 int detachpid(pid_t pid, bool untrack);
 
 extern cgmgr_t cgmgr;
+
+#ifdef CGRPFS_PUFFS
+PUFFSOP_PROTOS(cgrpfs);
+#else
 extern struct fuse_operations cgops;
+#endif
 
 #endif /* CGRPFS_H_ */
