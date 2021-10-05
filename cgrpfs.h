@@ -33,9 +33,16 @@ typedef struct pid_hash_entry {
 	UT_hash_handle hh;
 } pid_hash_entry_t;
 
+typedef struct poll_request {
+	LIST_ENTRY(poll_request) pollreqs;
+
+	struct cg_node *node;
+} poll_request_t;
+
 /* kind of CGroupFS node */
 typedef enum cg_nodetype {
 	CGN_INVALID = -1,
+	CGN_EVENTS, /* cgroup.events file */
 	CGN_PROCS, /* cgroup.procs file */
 	CGN_RELEASE_AGENT, /* release_agent file */
 	CGN_NOTIFY_ON_RELEASE, /* notify_on_release file */

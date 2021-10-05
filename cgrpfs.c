@@ -209,7 +209,8 @@ delnode(cg_node_t *node)
 static int
 addcgdirfiles(cg_node_t *node)
 {
-	struct cgdir_nodes nodes[] = { { CGN_PROCS, "cgroup.procs" },
+	struct cgdir_nodes nodes[] = { { CGN_EVENTS, "cgroup.events" },
+		{ CGN_PROCS, "cgroup.procs" },
 		{ CGN_RELEASE_AGENT, "release_agent" },
 		{ CGN_NOTIFY_ON_RELEASE, "notify_on_release" },
 		{ CGN_INVALID, NULL } };
@@ -409,6 +410,25 @@ nodefullpath(cg_node_t *node)
 		return nodefullpath_internal(node);
 }
 
+/* Check if a CGroup node has any PIDs, or if any of its subnodes do. */
+static bool
+nodepopulated(cg_node_t *node)
+{
+	bool populated = false;
+	pid_hash_entry_t *entry, *tmp2;
+	cg_node_t *subnode;
+
+	HASH_ITER(hh, cgmgr.pidcg, entry, tmp2)
+	if (entry->node == node)
+		return true;
+
+	LIST_FOREACH (subnode, &node->subnodes, entries)
+		if (nodepopulated(subnode))
+			return true;
+
+	return false;
+}
+
 char *
 procsfiletxt(cg_node_t *node)
 {
@@ -469,6 +489,9 @@ nodetxt(cg_node_t *node)
 
 		return buf;
 
+	} else if (node->type == CGN_EVENTS) {
+		char *buf;
+		return NULL;
 	} else if (node->type == CGN_PROCS)
 		return procsfiletxt(node);
 	else

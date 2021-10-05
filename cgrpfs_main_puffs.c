@@ -40,8 +40,11 @@ main(int argc, char *argv[])
 	int pflags = 0, detach = 0, mntflags = 0;
 	int ch;
 
-	while ((ch = getopt(argc, argv, "o:")) != -1) {
+	while ((ch = getopt(argc, argv, "do:")) != -1) {
 		switch (ch) {
+		case 'd':
+			pflags |= PUFFS_FLAG_OPDUMP;
+			break;
 		case 'o':
 			mp = getmntopts(optarg, puffsmopts, &mntflags, &pflags);
 			if (mp == NULL)
@@ -77,6 +80,7 @@ main(int argc, char *argv[])
 	PUFFSOP_SET(pops, cgrpfs, node, access);
 	PUFFSOP_SET(pops, cgrpfs, node, getattr);
 	PUFFSOP_SET(pops, cgrpfs, node, setattr);
+	PUFFSOP_SET(pops, cgrpfs, node, poll);
 	PUFFSOP_SET(pops, cgrpfs, node, readdir);
 	PUFFSOP_SET(pops, cgrpfs, node, rename);
 	PUFFSOP_SET(pops, cgrpfs, node, read);

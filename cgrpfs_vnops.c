@@ -4,6 +4,8 @@
 
 #include "cgrpfs.h"
 
+#include <sys/poll.h>
+
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
@@ -18,6 +20,7 @@ static int
 nodevtype(cg_node_t *node)
 {
 	switch (node->type) {
+	case CGN_EVENTS:
 	case CGN_PROCS: /* cgroup.procs file */
 	case CGN_RELEASE_AGENT: /* release_agent file */
 	case CGN_NOTIFY_ON_RELEASE: /* notify_on_release file */
@@ -201,6 +204,15 @@ cgrpfs_node_setattr(struct puffs_usermount *pu, void *opc,
 		return EOPNOTSUPP;
 
 	return 0;
+}
+
+/* xxx: not usable until PUFFS fixed in NetBSD. */
+int
+cgrpfs_node_poll(struct puffs_usermount *pu, void *opc, int *revents)
+{
+	CGMGR_LOCKED;
+	*revents &= POLLIN | POLLHUP;
+	return EOPNOTSUPP;
 }
 
 int

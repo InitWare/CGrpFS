@@ -1,3 +1,5 @@
+#include <sys/poll.h>
+
 #include <assert.h>
 #include <err.h>
 #include <errno.h>
@@ -84,6 +86,15 @@ cg_open(const char *path, struct fuse_file_info *fi)
 		return -ENOMEM;
 			}
 
+	return 0;
+}
+
+static int
+cg_poll(const char *path, struct fuse_file_info *fi, struct fuse_pollhandle *ph,
+	unsigned *reventsp)
+{
+	*reventsp = POLLIN | POLLHUP;
+	fuse_notify_poll(ph);
 	return 0;
 }
 
@@ -257,6 +268,7 @@ struct fuse_operations cgops = {
 	.chown = cg_chown,
 	.getattr = cg_getattr,
 	.open = cg_open,
+	.poll = cg_poll,
 	.read = cg_read,
 	.write = cg_write,
 	.release = cg_release,
