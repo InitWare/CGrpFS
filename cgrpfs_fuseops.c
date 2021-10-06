@@ -89,7 +89,7 @@ cg_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-#ifndef SVC_PLATFORM_OpenBSD
+#ifndef __OpenBSD__
 static int
 cg_poll(const char *path, struct fuse_file_info *fi, struct fuse_pollhandle *ph,
 	unsigned *reventsp)
@@ -270,7 +270,7 @@ struct fuse_operations cgops = {
 	.chown = cg_chown,
 	.getattr = cg_getattr,
 	.open = cg_open,
-#ifndef SVC_PLATFORM_OpenBSD /* no fuse poll on OpenBSD */
+#ifndef __OpenBSD__ /* no fuse poll on OpenBSD */
 	.poll = cg_poll,
 #endif
 	.read = cg_read,
