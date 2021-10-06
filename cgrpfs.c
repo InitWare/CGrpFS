@@ -6,10 +6,15 @@
 #endif
 
 #include <sys/event.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/wait.h>
 
 #include <assert.h>
 #include <err.h>
 #include <errno.h>
+#include <inttypes.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +56,9 @@ kqueue_thread(void *unused)
 			;
 		else if (r == 0)
 			warn("Got 0 from kevent");
+		else if (kev.filter == EVFILT_READ &&
+			kev.ident == cgmgr.notifyfd)
+			cgmgr_accept();
 		else if (kev.filter == EVFILT_PROC) {
 			if (kev.fflags & NOTE_CHILD) {
 				pid_hash_entry_t *entry;
@@ -65,7 +73,7 @@ kqueue_thread(void *unused)
 				else
 					attachpid(entry->node, kev.ident);
 			} else if (kev.fflags & NOTE_EXIT)
-				detachpid(kev.ident, false);
+				detachpid(kev.ident, kev.data, false);
 			else if (kev.fflags & NOTE_TRACKERR)
 				warn("NOTE_TRACKERR received from Kernel Queue");
 			else if (kev.fflags & NOTE_EXEC)
@@ -149,7 +157,7 @@ movepids(cg_node_t *from, cg_node_t *to)
 		if (to)
 			entry->node = to;
 		else
-			detachpid(entry->pid, true);
+			detachpid(entry->pid, 0, true);
 	}
 }
 
@@ -533,8 +541,36 @@ attachpid(cg_node_t *node, pid_t pid)
 	return -errno;
 }
 
+void
+notify_exit(pid_t pid, int wstat)
+{
+	siginfo_t si;
+	listener_t *val, *tmp;
+
+	si.si_pid = pid;
+	si.si_signo = SIGCHLD;
+
+	if (WIFEXITED(wstat)) {
+		si.si_code = CLD_EXITED;
+		si.si_status = WEXITSTATUS(wstat);
+	} else if (WIFSIGNALED(wstat)) {
+		si.si_code = CLD_KILLED;
+		si.si_status = WTERMSIG(wstat);
+	}
+
+	LIST_FOREACH_SAFE (val, &cgmgr.listeners, listeners, tmp) {
+		ssize_t r = send(val->fd, &si, sizeof si, MSG_NOSIGNAL);
+		if (r < 0 && errno == EPIPE) {
+			/* remove the listener that disconnected */
+			LIST_REMOVE(val, listeners);
+			free(val);
+		} else if (r < 0)
+			warn("Failed to send exit notification");
+	}
+}
+
 int
-detachpid(pid_t pid, bool untrack)
+detachpid(pid_t pid, int wstat, bool untrack)
 {
 	struct kevent kev;
 	cg_node_t *node;
@@ -556,6 +592,8 @@ detachpid(pid_t pid, bool untrack)
 	else {
 		HASH_DEL(cgmgr.pidcg, entry);
 		free(entry);
+		if (!untrack)
+			notify_exit(pid, wstat);
 	}
 
 	return 0;
@@ -564,6 +602,9 @@ detachpid(pid_t pid, bool untrack)
 void
 cgmgr_init(void)
 {
+	struct sockaddr_un sun = { .sun_family = AF_UNIX,
+		.sun_path = "/var/run/cgrpfs.notify" };
+	struct kevent kev;
 #ifdef CGRPFS_THREADED
 	int r;
 	pthread_t thrd;
@@ -582,6 +623,23 @@ cgmgr_init(void)
 		errx(EXIT_FAILURE, "pthread_create failed: %s", strerror(r));
 #endif
 
+	cgmgr.notifyfd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+	if (cgmgr.notifyfd < 0)
+		err(EXIT_FAILURE, "failed to create listener socket");
+
+	unlink(sun.sun_path);
+
+	if (bind(cgmgr.notifyfd, (struct sockaddr *)&sun, SUN_LEN(&sun)) < 0)
+		err(EXIT_FAILURE, "failed to bind listener socket");
+
+	if (listen(cgmgr.notifyfd, 10) < 0)
+		err(EXIT_FAILURE, "failed to listen on listener socket");
+
+	EV_SET(&kev, cgmgr.notifyfd, EVFILT_READ, EV_ADD, 0, 0, NULL);
+	if ((kevent(cgmgr.kq, &kev, 1, NULL, 0, NULL)) < 0)
+		err(EXIT_FAILURE,
+			"Failed to add event for notify FD to Kernel Queue");
+
 	cgmgr.pidcg = NULL;
 
 	cgmgr.rootnode = newcgdir(NULL, NULL, 0755, 0, 0);
@@ -594,4 +652,26 @@ cgmgr_init(void)
 		errx(EXIT_FAILURE, "Failed to allocate meta node.");
 
 	cgmgr.metanode->attr.st_mode = S_IFDIR | 0755;
+
+	LIST_INIT(&cgmgr.listeners);
+}
+
+void
+cgmgr_accept(void)
+{
+	listener_t *listener = malloc(sizeof *listener);
+
+	if (!listener) {
+		warn("Failed to allocate listener");
+		return;
+	}
+
+	listener->fd = accept(cgmgr.notifyfd, NULL, 0);
+	if (listener->fd < 0) {
+		warn("Failed to accept listener");
+		free(listener);
+		return;
+	}
+
+	LIST_INSERT_HEAD(&cgmgr.listeners, listener, listeners);
 }

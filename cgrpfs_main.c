@@ -63,12 +63,15 @@ loop()
 			break;
 		else if (r == 0)
 			warn("Got 0 from kevent");
+		else if (kev.filter == EVFILT_READ &&
+			kev.ident == cgmgr.notifyfd)
+			cgmgr_accept();
 		else if (kev.filter == EVFILT_READ) {
 			r = fuse_session_receive_buf(se, &fbuf, &tmpch);
 
 			if (r == -EINTR)
 				continue;
-			if (r <= 0)
+			else if (r <= 0)
 				errx(EXIT_FAILURE, "Got <0 from fuse");
 
 			fuse_session_process_buf(se, &fbuf, tmpch);
@@ -86,7 +89,7 @@ loop()
 				else
 					attachpid(entry->node, kev.ident);
 			} else if (kev.fflags & NOTE_EXIT)
-				detachpid(kev.ident, false);
+				detachpid(kev.ident, kev.data, false);
 			else if (kev.fflags & NOTE_TRACKERR)
 				warn("NOTE_TRACKERR received from Kernel Queue");
 			else if (kev.fflags & NOTE_EXEC)

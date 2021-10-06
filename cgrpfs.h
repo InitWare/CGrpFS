@@ -39,6 +39,13 @@ typedef struct poll_request {
 	struct cg_node *node;
 } poll_request_t;
 
+/* a listener for emptiness/exit events */
+typedef struct listener {
+	LIST_ENTRY(listener) listeners;
+
+	int fd;
+} listener_t;
+
 /* kind of CGroupFS node */
 typedef enum cg_nodetype {
 	CGN_INVALID = -1,
@@ -78,8 +85,11 @@ typedef struct cg_node {
 typedef struct cgmgr {
 	struct fuse *fuse;
 	char *mountpoint;
-	int mt;
-	int kq;
+	int mt; /* is it multithreaded? */
+	int kq; /* kernel queue fd */
+	int notifyfd; /* notification server fd for exit and emptiness events */
+
+	LIST_HEAD(listeners, listener) listeners;
 
 	pid_hash_entry_t *pidcg; /* map pid => node */
 
@@ -106,6 +116,8 @@ typedef struct cgn_filedesc {
 
 /* set up the cgmgr */
 void cgmgr_init(void);
+/* accept a connection on the notify passive socket */
+void cgmgr_accept(void);
 
 /* Create a new node and initialise it enough to let delnode not fail */
 cg_node_t *newnode(cg_node_t *parent, const char *name, cg_nodetype_t type);
@@ -135,7 +147,7 @@ char *procsfiletxt(cg_node_t *node);
 /* Attach a PID to a CGroup */
 int attachpid(cg_node_t *node, pid_t pid);
 /* Detach a PID from its owner CGroup and stop tracking it if untrack set */
-int detachpid(pid_t pid, bool untrack);
+int detachpid(pid_t pid, int wstat, bool untrack);
 
 extern cgmgr_t cgmgr;
 
