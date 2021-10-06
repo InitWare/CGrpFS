@@ -89,6 +89,7 @@ cg_open(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
+#ifndef SVC_PLATFORM_OpenBSD
 static int
 cg_poll(const char *path, struct fuse_file_info *fi, struct fuse_pollhandle *ph,
 	unsigned *reventsp)
@@ -97,6 +98,7 @@ cg_poll(const char *path, struct fuse_file_info *fi, struct fuse_pollhandle *ph,
 	fuse_notify_poll(ph);
 	return 0;
 }
+#endif
 
 static int
 cg_read(const char *path, char *buf, size_t len, off_t off,
@@ -268,7 +270,9 @@ struct fuse_operations cgops = {
 	.chown = cg_chown,
 	.getattr = cg_getattr,
 	.open = cg_open,
+#ifndef SVC_PLATFORM_OpenBSD /* no fuse poll on OpenBSD */
 	.poll = cg_poll,
+#endif
 	.read = cg_read,
 	.write = cg_write,
 	.release = cg_release,
