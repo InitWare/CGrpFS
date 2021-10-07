@@ -36,9 +36,15 @@ less data, but bear in mind that at least permissions data must be stored
 for nodes, as the GNU/Linux CGroup filesystem allows changing permissions, e.g.
 to facilitate delegation.
 
-To ensure consistency of file contents over the course of multiple reads, each
-`open` operation allocates a buffer into which the contents of the associated
-file is generated in full.
+To try to ensure consistency of file contents over the course of multiple reads,
+each `open` operation in the FUSE version of CGrpFS allocates a buffer into
+which the contents of the associated file is generated in full, and this buffer
+is used for each read with that FUSE file handle. This may not work properly in
+every case because the SunOS VFS (as imitated by BSD) enforces a distinction
+between the file and vnode levels absent from GNU/Linux. The likely result of
+this distinction is that read operations may not be mapped to the right file
+handle during read operations. The only viable fix (which would also work for
+PUFFS) would be the generation of a fresh vnode for every open.
 
 A mini-ProcFS is also provided with only a minimal `cgroup` file present in each
 PID's directory. The nodes for directories (and the contained `cgroup` file)
@@ -48,6 +54,14 @@ pruned if unused for some time. Their purpose is to allow InitWare to determine
 the containing CGroup of a PID. If a PID is inquired about which does not
 currently belong to any CGroup, it is automatically added to the root CGroup,
 in line with the behaviour on Linux.
+
+Because only NetBSD's PUFFS (and its FUSE emulation, PERFUSE) support poll()
+(but not the installation of Kernel Queues filters), while FUSE for other BSDs
+doesn't, and because the `release_agent` mechanism is fundamentally fragile,
+CGrpFS listens on a sequenced-packet socket in the Unix domain at
+`/var/run/cgrpfs.notify`. On a process exiting, a `siginfo_t` structure is
+prepared and sent as a message to every peer connected to that socket. InitWare
+uses this to help track process lifecycle.
 
 Some effort is made to be resilient to out-of-memory conditions. This is
 untested and may not work. Whether libfuse is similarly resilient is another
@@ -65,8 +79,6 @@ Room for Improvement
 
 There are several ways in which CGrpFS could be improved.
 
-Path lookup is an ugly mess and ought to be done more cleanly.
-
 The mini-ProcFS is immutable by users and stateless, only providing information
 maintained by the actual CGroups tree; it could therefore be implemented
 without backing nodes to save some memory use.
@@ -82,15 +94,13 @@ conditions causing a crash. Needless lookups also occur with the high-level
 interface because it's based on path strings; the archictecture of CGrpFS more
 readily fits the lower-level inode-based interface. Path lookup would also
 become simpler since there would be one lookup request for each component of
-the path.
+the path; currently it has ugly special-cases for e.g. `mkdir`.
 
 OOM resilience could be improved in line with the notes in the Architecture
 section above.
 
-Release agent support needs to be implemented.
-
-The CGroups 2.0 `cgroup.notify` file, which may be polled e.g. to provide
-notification of CGroup becoming or ceasing to be empty, could be implemented.
+Release agent support should be implemented for compatibility, though it's not
+a reliable mechanism.
 
 FreeBSD provides hierarchical resource control via the `rctl` system. It's not
 clear whether this usefully maps to CGroups semantics, but it certainly is
@@ -104,3 +114,6 @@ conditions more aggressively.
 
 Furthering an in-kernel implementation of CGrpFS, hierarchical resource control
 mechanisms could be implemented in those BSDs without them.
+
+Contributing poll() and kevent() supprt to each BSD's FUSE/PUFFS implementation
+would allow the CGroups 2.0 `cgroup.events` file to be implemented.
